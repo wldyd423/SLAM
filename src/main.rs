@@ -1,4 +1,6 @@
 use eframe::egui;
+use rand_distr::{Distribution, Normal};
+use std::collections::VecDeque;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions::default();
@@ -17,7 +19,11 @@ struct Robot {
 #[derive(Default)]
 struct App {
     robot: Robot,
+    sigma: f32,
     is_initialized: bool, //false by default
+    last_sensor: Option<(f32, f32)>,
+    sensor_history: VecDeque<(f32, f32)>,
+    sensor_history_limit: usize,
 }
 
 impl App {
@@ -63,6 +69,11 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 ui.heading("Controls");
                 ui.separator();
+                ui.add(
+                    egui::Slider::new(&mut self.sigma, 0.0_f32..=100.0)
+                        .text("Sensor sigma")
+                        .suffix(" px"),
+                );
             });
         egui::CentralPanel::default().show(ctx, |ui| {
             let (res, painter) = ui.allocate_painter(ui.available_size(), egui::Sense::hover());
@@ -73,6 +84,24 @@ impl eframe::App for App {
                 self.robot.speed = 2.0;
                 self.robot.rot_speed = 0.05;
                 self.is_initialized = true;
+                self.sigma = 20.0;
+                self.sensor_history_limit = 100;
+            }
+            let mut rng = rand::rng();
+            let dist = Normal::new(0.0_f32, self.sigma).unwrap();
+            let mx = self.robot.x + dist.sample(&mut rng);
+            let my = self.robot.y + dist.sample(&mut rng);
+            self.last_sensor = Some((mx, my));
+            self.sensor_history.push_back((mx, my));
+            if self.sensor_history.len() > self.sensor_history_limit {
+                self.sensor_history.pop_front();
+            }
+            for &(x, y) in &self.sensor_history {
+                painter.circle_filled(
+                    egui::pos2(x, y),
+                    3.0,
+                    egui::Color32::from_rgba_unmultiplied(255, 80, 80, 80),
+                );
             }
 
             let center = egui::pos2(self.robot.x, self.robot.y);
@@ -84,7 +113,9 @@ impl eframe::App for App {
             painter.circle_filled(center, radius, color);
             self.handle_input(ctx, &canvas_rect);
 
+            //println!("dbg: {:?}", self.last_sensor);
             ui.label("Hi");
+            ctx.request_repaint();
         });
     }
 }
